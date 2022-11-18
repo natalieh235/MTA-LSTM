@@ -7,9 +7,9 @@ class Config(object):
     learning_rate = 0.001
     max_grad_norm = 10 #gradient clipping
     num_layers = 2
-    num_steps = 101 #this value is one more than max number of words in sentence
+    num_steps = 1000 #this value is one more than max number of words in sentence
     hidden_size = 20
-    word_embedding_size = 10
+    word_embedding_size = 100
     max_epoch = 30
     max_max_epoch = 80
     keep_prob = 0.5 #The probability that each element is kept through dropout layer

@@ -1,25 +1,24 @@
 #coding:utf-8
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import sys,time
 import numpy as np
-import cPickle, os
+import pickle, os
 import random
 import Config
 
-try:
-    from tensorflow.contrib.legacy_seq2seq.python.ops.seq2seq import sequence_loss_by_example
-except:
-    pass
+import tensorflow_addons as tfa
 
-config_tf = tf.ConfigProto()
+# from tensorflow.contrib.legacy_seq2seq.python.ops.seq2seq import sequence_loss_by_example
+
+config_tf = tf.compat.v1.ConfigProto()
 config_tf.gpu_options.allow_growth = True
 
-total_step = 30 #get value from output of Preprocess.py file
+total_step = 61 #get value from output of Preprocess.py file
 
 config = Config.Config()
 
-word_vec = cPickle.load(open('word_vec.pkl', 'r'))
-vocab = cPickle.load(open('word_voc.pkl','r'))
+word_vec = pickle.load(open('word_vec.pkl', 'rb'))
+vocab = pickle.load(open('word_voc.pkl','rb'))
 
 config.vocab_size = len(vocab)
 
@@ -60,12 +59,16 @@ class Model(object):
         self._targets = tf.reshape(self._targets, [batch_size, -1])
         self._input_word = tf.reshape(self._input_word, [batch_size, -1])
         self._mask = tf.reshape(self._mask, [batch_size, -1])
+
+        def lstm_cell(): 
+            LSTM_cell = tf.nn.rnn_cell.LSTMCell(size, forget_bias=0.0, state_is_tuple=False)
+            if is_training and config.keep_prob < 1:
+                LSTM_cell = tf.nn.rnn_cell.DropoutWrapper(
+                    LSTM_cell, output_keep_prob=config.keep_prob)
+            return LSTM_cell
         
-        LSTM_cell = tf.nn.rnn_cell.LSTMCell(size, forget_bias=0.0, state_is_tuple=False)
-        if is_training and config.keep_prob < 1:
-            LSTM_cell = tf.nn.rnn_cell.DropoutWrapper(
-                LSTM_cell, output_keep_prob=config.keep_prob)
-        cell = tf.nn.rnn_cell.MultiRNNCell([LSTM_cell] * config.num_layers, state_is_tuple=False)
+        # cell = tf.nn.rnn_cell.MultiRNNCell([LSTM_cell] * config.num_layers, state_is_tuple=False)
+        cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell() for _ in range(config.num_layers)], state_is_tuple=False)
 
         self._initial_state = cell.zero_state(batch_size, tf.float32)
 
@@ -132,16 +135,21 @@ class Model(object):
         softmax_b = tf.get_variable("softmax_b", [vocab_size])
         logits = tf.matmul(output, softmax_w) + softmax_b
         
-        try:
-            loss = tf.nn.seq2seq.sequence_loss_by_example(
-                [logits],
-                [tf.reshape(self._targets, [-1])],
-                [tf.reshape(self._mask, [-1])], average_across_timesteps=False)
-        except:
-            loss = sequence_loss_by_example(
-                [logits],
-                [tf.reshape(self._targets, [-1])],
-                [tf.reshape(self._mask, [-1])], average_across_timesteps=False)
+        # try:
+        #     loss = tf.nn.seq2seq.sequence_loss_by_example(
+        #         [logits],
+        #         [tf.reshape(self._targets, [-1])],
+        #         [tf.reshape(self._mask, [-1])], average_across_timesteps=False)
+        # except:
+        #     loss = sequence_loss_by_example(
+        #         [logits],
+        #         [tf.reshape(self._targets, [-1])],
+        #         [tf.reshape(self._mask, [-1])], average_across_timesteps=False)
+
+        loss = tfa.seq2seq.sequence_loss(
+            [logits],
+            [tf.reshape(self._targets, [-1])],
+            [tf.reshape(self._mask, [-1])], average_across_timesteps=False)
         
         self.cost1 = tf.reduce_sum(loss)
         self.cost2 = tf.reduce_sum((phi_res - atten_sum)**2)
@@ -213,7 +221,7 @@ def run_epoch(session, m, eval_op):
                                   m._init_output: initial_output})
         
         if np.isnan(cost):
-            print 'cost is nan!!!'
+            print('cost is nan!!!')
             exit()
         costs += cost
         iters += m.num_steps
@@ -252,9 +260,9 @@ def main(_):
             
             
             if (i+1) % config.save_freq == 0:
-                print 'model saving ...'
+                print('model saving ...')
                 model_saver.save(session, config.model_path+'--%d'%(i+1))
-                print 'Done!'
+                print('Done!')
             
 if __name__ == "__main__":
     tf.app.run()
